@@ -15,7 +15,9 @@
 #include <QSocketNotifier>
 #include <QDir>
 #include <linux/input.h>
+#include <linux/cec.h>
 #include <cerrno>
+#include <cstring>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
@@ -95,6 +97,7 @@ InputManager::InputManager(const QString &dataRoot, AppCore *appCore, QObject *p
 
 #ifdef Q_OS_LINUX
     openConsumerControlDevice();
+    openCecDevice();
 #endif
 
     // Watch the data dir (not the file) so input.cfg can appear later and so
@@ -118,6 +121,8 @@ InputManager::~InputManager() {
 #ifdef Q_OS_LINUX
     if (m_consumerFd >= 0)
         ::close(m_consumerFd);
+    if (m_cecFd >= 0)
+        ::close(m_cecFd);
 #endif
 }
 
@@ -478,6 +483,123 @@ void InputManager::onConsumerControlReadable() {
             beginPress(a);
         else
             releaseAction(a);
+    }
+}
+
+void InputManager::openCecDevice() {
+    for (int index = 0; index < 16; ++index) {
+        const QString devicePath = QStringLiteral("/dev/cec%1").arg(index);
+        const int fd = ::open(devicePath.toLocal8Bit().constData(), O_RDWR | O_NONBLOCK | O_CLOEXEC);
+        if (fd < 0)
+            continue;
+
+        cec_caps caps{};
+        if (::ioctl(fd, CEC_ADAP_G_CAPS, &caps) < 0) {
+            ::close(fd);
+            continue;
+        }
+
+        cec_log_addrs addresses{};
+        if (::ioctl(fd, CEC_ADAP_G_LOG_ADDRS, &addresses) < 0) {
+            qWarning("[input] cannot read CEC addresses from %s", qPrintable(devicePath));
+            ::close(fd);
+            continue;
+        }
+
+        if (!cec_has_playback(addresses.log_addr_mask) &&
+            (caps.capabilities & CEC_CAP_LOG_ADDRS)) {
+            __u16 physicalAddress = CEC_PHYS_ADDR_INVALID;
+            if (::ioctl(fd, CEC_ADAP_G_PHYS_ADDR, &physicalAddress) < 0 ||
+                physicalAddress == CEC_PHYS_ADDR_INVALID) {
+                qWarning("[input] CEC adapter %s has no HDMI physical address", qPrintable(devicePath));
+                ::close(fd);
+                continue;
+            }
+
+            cec_log_addrs requested{};
+            requested.cec_version = CEC_OP_CEC_VERSION_1_4;
+            requested.num_log_addrs = 1;
+            requested.vendor_id = CEC_VENDOR_ID_NONE;
+            qstrncpy(requested.osd_name, "240-MP", sizeof(requested.osd_name));
+            requested.primary_device_type[0] = CEC_OP_PRIM_DEVTYPE_PLAYBACK;
+            requested.log_addr_type[0] = CEC_LOG_ADDR_TYPE_PLAYBACK;
+            requested.all_device_types[0] = CEC_OP_ALL_DEVTYPE_PLAYBACK;
+
+            if (::ioctl(fd, CEC_ADAP_S_LOG_ADDRS, &requested) < 0 ||
+                !cec_has_playback(requested.log_addr_mask)) {
+                qWarning("[input] could not claim a CEC playback address on %s", qPrintable(devicePath));
+                ::close(fd);
+                continue;
+            }
+        } else if (!cec_has_playback(addresses.log_addr_mask)) {
+            qWarning("[input] CEC adapter %s has no playback logical address", qPrintable(devicePath));
+            ::close(fd);
+            continue;
+        }
+
+        m_cecFd = fd;
+        m_cecNotifier = new QSocketNotifier(fd, QSocketNotifier::Read, this);
+        connect(m_cecNotifier, &QSocketNotifier::activated,
+                this, &InputManager::onCecReadable);
+        qInfo("[input] HDMI-CEC remote ready on %s", qPrintable(devicePath));
+        return;
+    }
+    qInfo("[input] no usable HDMI-CEC adapter found");
+}
+
+void InputManager::onCecReadable() {
+    while (m_cecFd >= 0) {
+        cec_msg message{};
+        if (::ioctl(m_cecFd, CEC_RECEIVE, &message) < 0) {
+            if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+                qWarning("[input] HDMI-CEC receive failed: %s", strerror(errno));
+            return;
+        }
+        if (message.len < 2)
+            continue;
+
+        const int opcode = message.msg[1];
+        if (opcode == CEC_MSG_USER_CONTROL_RELEASED) {
+            if (m_cecHeldAction != Action::None) {
+                releaseAction(m_cecHeldAction);
+                m_cecHeldAction = Action::None;
+            }
+            continue;
+        }
+        if (opcode != CEC_MSG_USER_CONTROL_PRESSED || message.len < 3)
+            continue;
+
+        Action action = Action::None;
+        switch (message.msg[2]) {
+        case CEC_OP_UI_CMD_UP:       action = Action::Up; break;
+        case CEC_OP_UI_CMD_DOWN:     action = Action::Down; break;
+        case CEC_OP_UI_CMD_LEFT:     action = Action::Left; break;
+        case CEC_OP_UI_CMD_RIGHT:    action = Action::Right; break;
+        case CEC_OP_UI_CMD_SELECT:
+        case CEC_OP_UI_CMD_ENTER:    action = Action::Select; break;
+        case CEC_OP_UI_CMD_BACK:
+        case CEC_OP_UI_CMD_DEVICE_ROOT_MENU:
+        case CEC_OP_UI_CMD_MEDIA_TOP_MENU:
+            action = Action::Back;
+            break;
+        case CEC_OP_UI_CMD_PLAY:
+        case CEC_OP_UI_CMD_PAUSE:
+            action = Action::PlayPause;
+            break;
+        case CEC_OP_UI_CMD_STOP:
+            action = Action::Back;
+            break;
+        default:
+            break;
+        }
+        if (action == Action::None)
+            continue;
+
+        if (m_cecHeldAction != Action::None && m_cecHeldAction != action)
+            releaseAction(m_cecHeldAction);
+        m_cecHeldAction = action;
+        setLastInputDevice(QStringLiteral("hdmi-cec"));
+        beginPress(action);
     }
 }
 #endif

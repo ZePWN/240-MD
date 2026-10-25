@@ -50,6 +50,7 @@ sudo apt-get install -y \
     qml6-module-qtquick-effects \
     libsdl2-2.0-0 \
     libpcsclite1 \
+    udisks2 \
     mpv
 
 # ── udev rule: allow tty group to open /dev/tty0 for VT switching ─────────────
@@ -57,6 +58,12 @@ echo 'KERNEL=="tty0", GROUP="tty", MODE="0620"' \
     | sudo tee /etc/udev/rules.d/99-240mp-tty.rules > /dev/null
 sudo udevadm control --reload-rules
 sudo udevadm trigger /dev/tty0
+
+# Expose kernel HDMI-CEC adapters to the headless app service.
+echo 'KERNEL=="cec[0-9]*", GROUP="video", MODE="0660"' \
+    | sudo tee /etc/udev/rules.d/99-240mp-cec.rules > /dev/null
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=cec
 
 # ── Choose install owner ──────────────────────────────────────────────────────
 # Asked up front so the extract step can hand /opt/240mp to the user the app
@@ -69,6 +76,19 @@ if [[ "${AUTOSTART_REPLY}" =~ ^[Yy]$ ]]; then
     SERVICE_USER="${SERVICE_USER:-pi}"
 fi
 OWNER_USER="${SERVICE_USER:-$USER}"
+
+# Allow this app user to mount non-system filesystems through UDisks2
+# without an interactive desktop Polkit session. System-device mounts still use
+# UDisks2's separate, administrator-only action.
+POLKIT_RULE="/etc/polkit-1/rules.d/60-240mp-usb-mount.rules"
+sudo tee "${POLKIT_RULE}" > /dev/null <<POLKIT_RULE_CONTENT
+polkit.addRule(function(action, subject) {
+    if (subject.user == "${OWNER_USER}" &&
+        action.id == "org.freedesktop.udisks2.filesystem-mount") {
+        return polkit.Result.YES;
+    }
+});
+POLKIT_RULE_CONTENT
 
 # ── Download tarball ───────────────────────────────────────────────────────────
 echo "Downloading ${TARBALL}..."

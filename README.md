@@ -63,6 +63,8 @@ Watch on YouTube: https://youtu.be/r-gylGDoELY
 - Shuffle playback
 - Playback history
 - Switch audio/subtitle tracks during playback
+- USB autoplay: add a root-level `Autoplay.txt` containing the filename to play from that drive; removal stops playback and returns to the main menu
+- HDMI-CEC remote navigation on Linux devices exposing a `/dev/cec*` adapter
 
 ### NFC Reader ([Wiki](https://github.com/anthonycaccese/240-MP/wiki/Module:-NFC-Reader))
 - Start video playback via NFC cards

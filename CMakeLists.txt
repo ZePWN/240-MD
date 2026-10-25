@@ -68,6 +68,7 @@ add_executable(240mp
     src/util/ExecPath.cpp
     src/util/DisplayHandoff.cpp
     src/util/FontconfigOverride.cpp
+    src/util/UsbAutoPlayWatcher.cpp
     src/input/InputManager.cpp
     src/input/IdleTracker.cpp
     src/update/UpdateManager.cpp

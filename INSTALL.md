@@ -36,6 +36,10 @@ However, if you already have Raspberry Pi OS set up and working for your TV then
     - Most controllers (Xbox, PlayStation, 8BitDo, NES-style, etc.) should work out of the box: D-pad/left stick to navigate, A to select, B to go back, Start for play/pause.  
     - Controllers can be plugged in at any time, and the button mapping can be customized — see [BUILDING.md → Gamepad input](BUILDING.md#gamepad-input-inputcfg).
     - If a controller isn't detected, make sure your user is in the `input` group: `sudo usermod -aG input $USER` then reboot.
+- HDMI-CEC TV remote
+    - On Raspberry Pi systems exposing a `/dev/cec*` adapter, navigation and playback keys are read directly by the app. The systemd service installed below has access through the `video` group; for manual launches, add your user to `video` and log in again: `sudo usermod -aG video $USER`.
+- USB autoplay
+    - The installer enables UDisks2 mounting for the selected app user, including headless systemd launches. Put `Autoplay.txt` at the USB drive root and place the media file named inside it beside the marker.
 
 ### Steps
 
