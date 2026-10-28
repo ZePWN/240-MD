@@ -1,3 +1,9 @@
+# 240-MD
+**a fork of 240-MP with support for HiMD minidiscs and HDMI-CEC.**
+* Can be configured to autoplay any removable media.
+* Can be controlled by TV remote via HDMI-CEC
+* Styled to fit the Sony minidisc aesthetic  .
+
 <img src="https://github.com/user-attachments/assets/73c3e46f-a74a-4d96-9c4f-ae30f28378be" />
 
 # 240-MP
