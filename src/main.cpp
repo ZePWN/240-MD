@@ -29,6 +29,7 @@
 #include "update/UpdateManager.h"
 #include "util/ExecPath.h"
 #include "util/DisplayHandoff.h"
+#include "util/UsbAutoPlayWatcher.h"
 #ifdef Q_OS_MAC
 #include "util/MacosUtils.h"
 #endif
@@ -163,6 +164,7 @@ int main(int argc, char *argv[]) {
     InputManager        inputManager(dataRoot, &appCore);
     IdleTracker         idleTracker(60);   // disabled until Main.qml applies the saved setting
     UpdateManager       updateManager(appRoot, dataRoot);
+    UsbAutoPlayWatcher  usbAutoPlayWatcher;
 
     // Playback follows the UI's display: mpv gets a --fs-screen* arg derived
     // from this on macOS / desktop Linux (no-op at index 0 and on headless).
@@ -192,6 +194,7 @@ int main(int argc, char *argv[]) {
     ctx->setContextProperty("mpvController", &mpvController);
     ctx->setContextProperty("inputManager",  &inputManager);
     ctx->setContextProperty("updateManager", &updateManager);
+    ctx->setContextProperty("usbAutoPlayWatcher", &usbAutoPlayWatcher);
 #ifdef Q_OS_MAC
     // Target display geometry in Qt coordinates (top-left origin), so the QML
     // Window bindings position onto the chosen screen. The native fullscreen
@@ -211,6 +214,7 @@ int main(int argc, char *argv[]) {
         qCritical("[main] QML engine failed to load Main.qml");
         return 1;
     }
+    usbAutoPlayWatcher.start();
 
     // Gamepad key events are posted straight to the root window so they reach
     // the QML focus item even when another window (mpv) holds OS focus.

@@ -9,6 +9,7 @@ FocusScope {
 
     property string filePath:    navParams.filePath || ""
     property string itemTitle:   navParams.title    || ""
+    property bool   autoPlay:    !!navParams.autoPlay
 
     property bool   overlayVisible:      false
     property int    choiceIndex:         0
@@ -135,11 +136,11 @@ FocusScope {
         loopOn        = !!appCore.get_setting(moduleRoot.moduleId, "loop_playback")
         // Some fancy logic to honor the old boolean settings until they get updated to the new format
         var shufRaw   = appCore.get_setting(moduleRoot.moduleId, "shuffle_playback")
-        shuffleSetting = (typeof shufRaw === "boolean") ? (shufRaw ? "yes" : "no") : (shufRaw || "ask")
+        shuffleSetting = autoPlay ? "no" : ((typeof shufRaw === "boolean") ? (shufRaw ? "yes" : "no") : (shufRaw || "ask"))
         var autoSubs  = appCore.get_setting(moduleRoot.moduleId, "auto_subtitles")
         subtitleMode  = (typeof autoSubs === "boolean") ? ((autoSubs === true) ? "on" : "forced") : (autoSubs || "forced")
         var resRaw    = appCore.get_setting(moduleRoot.moduleId, "resume_playback") || "ask"
-        resumeSetting = (resRaw === "yes" || resRaw === "no") ? resRaw : "ask"
+        resumeSetting = autoPlay ? "no" : ((resRaw === "yes" || resRaw === "no") ? resRaw : "ask")
         var imgDur = parseFloat(appCore.get_setting(moduleRoot.moduleId, "image_duration"))
         imageDurationSec = isNaN(imgDur) ? 5 : imgDur
 

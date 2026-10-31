@@ -200,6 +200,30 @@ Window {
     property var appCurrentParams: ({})
     property bool _startupNavigated: false
 
+    function startUsbAutoplay(filePath) {
+        root._startupNavigated = true
+        root.appNavStack = [{ source: "views/ModuleList.qml", params: {}, listState: {} }]
+        root.appCurrentParams = {}
+        moduleLoader.setSource("modules/local_files/views/Root.qml", {
+            "navParams": { "autoPlayPath": filePath }
+        })
+    }
+
+    function returnToMainMenu() {
+        root.appNavStack = []
+        root.appCurrentParams = {}
+        moduleLoader.setSource("views/ModuleList.qml")
+    }
+
+    Connections {
+        target: usbAutoPlayWatcher
+        function onAutoplayRequested(filePath) { root.startUsbAutoplay(filePath) }
+        function onDriveRemoved() {
+            root.returnToMainMenu()
+            mpvController.stop()
+        }
+    }
+
     // --- MPV PLAYBACK TRACKING ---
     // Block the screen saver while mpv is playing so it never flashes during or
     // immediately after playback. The core guard is in IdleTracker (mpvActive

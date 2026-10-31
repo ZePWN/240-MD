@@ -68,6 +68,7 @@ add_executable(240mp
     src/util/ExecPath.cpp
     src/util/DisplayHandoff.cpp
     src/util/FontconfigOverride.cpp
+    src/util/UsbAutoPlayWatcher.cpp
     src/input/InputManager.cpp
     src/input/IdleTracker.cpp
     src/update/UpdateManager.cpp
@@ -112,7 +113,7 @@ target_include_directories(240mp PRIVATE
 # ── macOS bundle metadata ──────────────────────────────────────────────────────
 set_target_properties(240mp PROPERTIES
     MACOSX_BUNDLE TRUE
-    MACOSX_BUNDLE_BUNDLE_NAME "240-MP"
+    MACOSX_BUNDLE_BUNDLE_NAME "240-MD"
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
     MACOSX_BUNDLE_GUI_IDENTIFIER "com.240mp.app"

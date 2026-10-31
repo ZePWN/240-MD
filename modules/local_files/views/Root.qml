@@ -64,6 +64,15 @@ FocusScope {
     }
 
     Component.onCompleted: {
+        var autoPlayPath = navParams.autoPlayPath || ""
+        if (autoPlayPath !== "") {
+            replaceWith("Player.qml", {
+                filePath: autoPlayPath,
+                title: autoPlayPath.substring(autoPlayPath.lastIndexOf("/") + 1),
+                autoPlay: true
+            })
+            return
+        }
         navigateTo("Items.qml", {})
     }
 }

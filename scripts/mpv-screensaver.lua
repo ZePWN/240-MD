@@ -1,4 +1,4 @@
--- Screen saver for 240-MP: bounces the 240-MP logo across a solid black
+-- Screen saver for 240-MP: bounces the 240-MD logo across a solid black
 -- background when the video has been paused longer than the configured timeout.
 --
 -- Loaded by --script= only when screensaver_timeout != "OFF".
@@ -14,23 +14,22 @@ local timeout_sec = tonumber(mp.get_opt("screensaver_timeout") or "60") or 60
 local SPEED = 2
 
 -- ─── logo ─────────────────────────────────────────────────────────────────────
--- Vector copy of assets/images/logo.svg (44x24 units, straight segments only,
+-- Vector copy of assets/images/logo.svg (24x24 units, straight segments only,
 -- filled white) so the mpv screen saver bounces the same mark as the QML one.
 -- Subpath windings alternate, so the mask cutout and the shape inside it render
 -- as hole / fill under both the even-odd and nonzero fill rules.
-local LOGO_UNITS_W, LOGO_UNITS_H = 44, 24
+local LOGO_UNITS_W, LOGO_UNITS_H = 24, 24
 local LOGO_SUBPATHS = {
-    { 44,0, 44,24, 0,24, 0,0 },
-    { 8,15.5, 8,17.5, 10,17.5, 10,19.5, 34,19.5, 34,17.5, 36,17.5, 36,15.5,
-      38,15.5, 38,8.5, 36,8.5, 36,6.5, 34,6.5, 34,4.5, 28,4.5, 28,6.5,
-      26,6.5, 26,8.5, 24,8.5, 24,15.5, 26,15.5, 26,17.5, 18,17.5, 18,15.5,
-      20,15.5, 20,8.5, 18,8.5, 18,6.5, 16,6.5, 16,4.5, 10,4.5, 10,6.5,
-      8,6.5, 8,8.5, 6,8.5, 6,15.5 },
-    { 27,13.535, 26,13.535, 26,10.035, 27,10.035, 27,9.035, 28,9.035,
-      28,8.035, 29,8.035, 29,7.035, 33,7.035, 33,8.035, 34,8.035,
-      34,9.035, 35,9.035, 35,10.035, 36,10.035, 36,13.535, 35,13.535,
-      35,14.536, 34,14.536, 34,15.535, 33,15.535, 33,16.535, 29,16.535,
-      29,15.535, 28,15.535, 28,14.536, 27,14.536 },
+        { 14,0, 30,0, 30,2, 32,2, 32,4, 34,4, 34,20, 32,20, 32,22,
+            30,22, 30,24, 14,24, 14,22, 12,22, 12,20, 10,20, 10,4,
+            12,4, 12,2, 14,2 },
+        { 20,6, 18,6, 18,7, 16,7, 16,9, 15,9, 15,15, 16,15,
+            16,17, 18,17, 18,18, 20,18, 20,19, 24,19, 24,18,
+            26,18, 26,17, 28,17, 28,15, 29,15, 29,9, 28,9, 28,7,
+            26,7, 26,6, 24,6, 24,5, 20,5 },
+        { 13,7, 13,17, 16,17, 16,7 },
+        { 21,10, 23,10, 23,11, 24,11, 24,13, 23,13, 23,14,
+            21,14, 21,13, 20,13, 20,11, 21,11 },
 }
 
 -- Build the ASS drawing string at a pixel scale, origin 0,0 (\pos moves it)
@@ -39,7 +38,7 @@ local function logo_drawing(scale)
     for _, sp in ipairs(LOGO_SUBPATHS) do
         for i = 1, #sp, 2 do
             parts[#parts + 1] = string.format("%s%.1f %.1f",
-                i == 1 and "m " or "l ", sp[i] * scale, sp[i + 1] * scale)
+                i == 1 and "m " or "l ", (sp[i] - 10) * scale, sp[i + 1] * scale)
         end
     end
     return table.concat(parts, " ")

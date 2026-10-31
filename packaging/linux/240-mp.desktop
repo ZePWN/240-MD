@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=240-MP
+Name=240-MD
 GenericName=Media Player
-Comment=Retro VHS-style media player
+Comment=Lo-fi MiniDisc-style media player
 Exec=240mp
 Icon=240-mp
 Terminal=false
