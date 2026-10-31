@@ -6,7 +6,7 @@ Row {
     
     // Custom Properties
     property url iconSource: "../../assets/images/logo.svg"
-    property string title: "240-MP"
+    property string title: "240-MD"
     property string subtitle: ""
 
     // Fits the standard screen gutter — 80px (root.sw * 0.125) on each side.

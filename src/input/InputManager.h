@@ -86,6 +86,7 @@ private slots:
     // Defined in the Q_OS_LINUX section of InputManager.cpp; the ifdef keeps
     // moc from emitting a metacall reference to it on other platforms.
     void onConsumerControlReadable();
+    void onCecReadable();
 #endif
 
 private:
@@ -100,6 +101,7 @@ private:
     void loadKeyRemap();
 #ifdef Q_OS_LINUX
     void openConsumerControlDevice();
+    void openCecDevice();
 #endif
     static QString evdevKeyName(int linuxCode);
     static QString mouseButtonName(int qtButton);
@@ -160,6 +162,9 @@ private:
 #ifdef Q_OS_LINUX
     int m_consumerFd = -1;
     QSocketNotifier *m_consumerNotifier = nullptr;
+    int m_cecFd = -1;
+    QSocketNotifier *m_cecNotifier = nullptr;
+    Action m_cecHeldAction = Action::None;
 #endif
 
     QString m_lastInputDevice = "keyboard";
