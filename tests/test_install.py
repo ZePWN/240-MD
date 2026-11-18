@@ -17,9 +17,14 @@ case "$cmd" in
     uname) echo "${FAKE_ARCH:-aarch64}" ;;
     id)
         case "${1:-}" in
-            -un) echo alice ;;
-            -u) [ "${2:-alice}" = root ] && echo 0 || echo 1000 ;;
-            *) [ "${1:-alice}" = alice ] ;;
+            -un) echo "${FAKE_LOGIN:-alice}" ;;
+            -u)
+                case "${2:-alice}" in
+                    root) echo 0 ;;
+                    alice|zepwn) echo 1000 ;;
+                    *) exit 1 ;;
+                esac ;;
+            *) [ "${1:-alice}" = alice ] || [ "${1:-}" = zepwn ] ;;
         esac ;;
     sudo)
         printf '%s\\n' "$*" >> "$FAKE_ROOT/commands"
@@ -43,7 +48,12 @@ case "$cmd" in
         else
             printf '{"tag_name":"v1.2.3"}\\n'
         fi ;;
-    systemctl) printf '%s\\n' "$*" >> "$FAKE_ROOT/systemctl" ;;
+    systemctl)
+        if [ "${1:-}" = show ]; then
+            printf '%s\\n' "${FAKE_SERVICE_USER:-}"
+        else
+            printf '%s\\n' "$*" >> "$FAKE_ROOT/systemctl"
+        fi ;;
     *) echo "Unexpected command: $cmd" >&2; exit 1 ;;
 esac
 """
@@ -69,9 +79,9 @@ class InstallerTests(unittest.TestCase):
         )
         self.env.pop("FAKE_ARCH", None)
 
-    def run_installer(self, *args, **env):
+    def run_installer(self, *args, installer=INSTALLER, **env):
         return subprocess.run(
-            ["bash", str(INSTALLER), *map(str, args)],
+            ["bash", str(installer), *map(str, args)],
             env={**self.env, **env},
             text=True,
             capture_output=True,
@@ -109,6 +119,37 @@ class InstallerTests(unittest.TestCase):
         result = self.run_installer("--source", ROOT, "--no-autostart")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((self.base / "etc/systemd/system/240mp.service").exists())
+
+    def test_source_directory_can_follow_user_option(self):
+        result = self.run_installer("--source", "--user", "zepwn", ROOT)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        unit = (self.base / "etc/systemd/system/240mp.service").read_text()
+        self.assertIn("User=zepwn", unit)
+
+    def test_missing_source_directory_and_user_are_reported(self):
+        result = self.run_installer("--source", "--user", "zepwn")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--source requires a 240-MP checkout", result.stderr)
+        result = self.run_installer("--user", "--source", ROOT)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--user requires", result.stderr)
+        self.assertFalse((self.base / "commands").exists())
+
+    def test_stale_service_owner_reports_the_selected_account(self):
+        unit_path = self.base / "existing.service"
+        unit_path.touch()
+        installer = self.base / "install.sh"
+        installer.write_text(INSTALLER.read_text().replace(
+            'SYSTEMD_SERVICE="/etc/systemd/system/240mp.service"',
+            f'SYSTEMD_SERVICE="{unit_path}"',
+        ))
+        result = self.run_installer("--source", ROOT, installer=installer, FAKE_SERVICE_USER="pi")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("selected account 'pi' does not exist", result.stderr)
+        self.assertFalse((self.base / "commands").exists())
+        result = self.run_installer("--source", "--user", "zepwn", ROOT,
+                                    installer=installer, FAKE_SERVICE_USER="pi")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_release_checksum_is_required(self):
         self.make_release(valid=False)

@@ -17,10 +17,11 @@ VERSION_SET=0
 AUTOSTART=1
 OWNER_USER=""
 SOURCE_DIR=""
+SOURCE_REQUESTED=0
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --user)
-            if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+            if [ "$#" -lt 2 ] || [ -z "$2" ] || [[ "$2" == -* ]]; then
                 echo "Error: --user requires an existing non-root username." >&2
                 exit 1
             fi
@@ -29,12 +30,16 @@ while [ "$#" -gt 0 ]; do
             ;;
         --no-autostart) AUTOSTART=0; shift ;;
         --source)
-            if [ "$#" -lt 2 ] || [ -z "$2" ]; then
-                echo "Error: --source requires a source directory." >&2
+            if [ "$SOURCE_REQUESTED" -eq 1 ]; then
+                echo "Error: specify --source only once." >&2
                 exit 1
             fi
-            SOURCE_DIR="$2"
-            shift 2
+            SOURCE_REQUESTED=1
+            shift
+            if [ "$#" -gt 0 ] && [[ "$1" != -* ]]; then
+                SOURCE_DIR="$1"
+                shift
+            fi
             ;;
         -h|--help)
             echo "Usage: bash install.sh [version | --source DIR] [--user USER] [--no-autostart]"
@@ -45,6 +50,11 @@ while [ "$#" -gt 0 ]; do
             exit 1
             ;;
         *)
+            if [ "$SOURCE_REQUESTED" -eq 1 ] && [ -z "$SOURCE_DIR" ]; then
+                SOURCE_DIR="$1"
+                shift
+                continue
+            fi
             if [ "$VERSION_SET" -eq 1 ]; then
                 echo "Error: specify at most one release version." >&2
                 exit 1
@@ -56,7 +66,7 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-if [ -n "$SOURCE_DIR" ]; then
+if [ "$SOURCE_REQUESTED" -eq 1 ]; then
     if [ "$VERSION_SET" -eq 1 ] || [ ! -f "$SOURCE_DIR/CMakeLists.txt" ] || [ ! -f "$SOURCE_DIR/Main.qml" ]; then
         echo "Error: --source requires a 240-MP checkout and cannot be combined with a release version." >&2
         exit 1
@@ -80,10 +90,16 @@ if [ -z "$OWNER_USER" ]; then
     OWNER_USER="$EXISTING_USER"
 fi
 OWNER_USER="${OWNER_USER:-${SUDO_USER:-$(id -un)}}"
-if [[ ! "$OWNER_USER" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] \
-    || ! id "$OWNER_USER" >/dev/null 2>&1 \
-    || [ "$(id -u "$OWNER_USER")" -eq 0 ]; then
-    echo "Error: specify an existing non-root account with --user USER." >&2
+if [[ ! "$OWNER_USER" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]]; then
+    echo "Error: selected account '${OWNER_USER}' has an unsupported username; use --user USER." >&2
+    exit 1
+fi
+if ! OWNER_UID=$(id -u "$OWNER_USER" 2>/dev/null); then
+    echo "Error: selected account '${OWNER_USER}' does not exist; use --user USER." >&2
+    exit 1
+fi
+if [ "$OWNER_UID" -eq 0 ]; then
+    echo "Error: selected account '${OWNER_USER}' is root; use --user USER for a non-root account." >&2
     exit 1
 fi
 if [ "$AUTOSTART" -eq 0 ] && [ -n "$EXISTING_USER" ] && [ "$OWNER_USER" != "$EXISTING_USER" ]; then
