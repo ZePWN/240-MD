@@ -3,47 +3,109 @@
 # 240-MP installer for Raspberry Pi OS Trixie (arm64)
 #
 # Usage:
-#   bash install.sh             # install latest release
-#   bash install.sh v1.2.0      # install a specific release tag
+#   bash install.sh [version | --source DIR] [--user USER] [--no-autostart]
 # ──────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-REPO="ZePWN/240-MD"          # ← update before first release
+REPO="ZePWN/240-MD"
 INSTALL_DIR="/opt/240mp"
 LAUNCHER="/usr/local/bin/240mp"
 SYSTEMD_SERVICE="/etc/systemd/system/240mp.service"
 
-# ── Resolve version ────────────────────────────────────────────────────────────
-VERSION="${1:-latest}"
-if [ "$VERSION" = "latest" ]; then
-    echo "Fetching latest release tag..."
-    VERSION=$(curl -fsSL \
-        "https://api.github.com/repos/${REPO}/releases/latest" \
-        | python3 -c "import sys, json; print(json.load(sys.stdin)['tag_name'])")
-fi
-echo "Installing 240-MP ${VERSION}"
+VERSION="latest"
+VERSION_SET=0
+AUTOSTART=1
+OWNER_USER=""
+SOURCE_DIR=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --user)
+            if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+                echo "Error: --user requires an existing non-root username." >&2
+                exit 1
+            fi
+            OWNER_USER="$2"
+            shift 2
+            ;;
+        --no-autostart) AUTOSTART=0; shift ;;
+        --source)
+            if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+                echo "Error: --source requires a source directory." >&2
+                exit 1
+            fi
+            SOURCE_DIR="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Usage: bash install.sh [version | --source DIR] [--user USER] [--no-autostart]"
+            exit 0
+            ;;
+        -*)
+            echo "Error: unknown option: $1" >&2
+            exit 1
+            ;;
+        *)
+            if [ "$VERSION_SET" -eq 1 ]; then
+                echo "Error: specify at most one release version." >&2
+                exit 1
+            fi
+            VERSION="$1"
+            VERSION_SET=1
+            shift
+            ;;
+    esac
+done
 
-TARBALL="240-MP-${VERSION}-linux-arm64.tar.gz"
-DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${TARBALL}"
+if [ -n "$SOURCE_DIR" ]; then
+    if [ "$VERSION_SET" -eq 1 ] || [ ! -f "$SOURCE_DIR/CMakeLists.txt" ] || [ ! -f "$SOURCE_DIR/Main.qml" ]; then
+        echo "Error: --source requires a 240-MP checkout and cannot be combined with a release version." >&2
+        exit 1
+    fi
+    SOURCE_DIR=$(cd "$SOURCE_DIR" && pwd)
+fi
 
 # ── Verify architecture ────────────────────────────────────────────────────────
 ARCH=$(uname -m)
 if [ "$ARCH" != "aarch64" ]; then
-    echo "Error: this installer is for arm64 (aarch64). Detected: $ARCH"
+    echo "Error: this installer is for arm64 (aarch64). Detected: $ARCH" >&2
     exit 1
 fi
+
+# Preserve the existing service owner when an administrator updates over SSH.
+EXISTING_USER=""
+if [ -f "$SYSTEMD_SERVICE" ]; then
+    EXISTING_USER=$(systemctl show 240mp.service --property=User --value)
+fi
+if [ -z "$OWNER_USER" ]; then
+    OWNER_USER="$EXISTING_USER"
+fi
+OWNER_USER="${OWNER_USER:-${SUDO_USER:-$(id -un)}}"
+if [[ ! "$OWNER_USER" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] \
+    || ! id "$OWNER_USER" >/dev/null 2>&1 \
+    || [ "$(id -u "$OWNER_USER")" -eq 0 ]; then
+    echo "Error: specify an existing non-root account with --user USER." >&2
+    exit 1
+fi
+if [ "$AUTOSTART" -eq 0 ] && [ -n "$EXISTING_USER" ] && [ "$OWNER_USER" != "$EXISTING_USER" ]; then
+    echo "Error: --no-autostart cannot change the existing service owner (${EXISTING_USER})." >&2
+    exit 1
+fi
+echo "Installing for user ${OWNER_USER}."
 
 # ── Install runtime dependencies ──────────────────────────────────────────────
 echo "Installing runtime dependencies..."
 sudo apt-get update -qq
-sudo apt-get install -y \
+sudo apt-get install -y --no-install-recommends \
+    ca-certificates curl python3 \
+    dbus polkitd \
     libqt6quick6 \
     libqt6qml6 \
     libqt6opengl6 \
     libqt6network6 \
     libqt6svg6 \
     qt6-svg-plugins \
-    qt6-wayland \
+    qml6-module-qtqml \
+    qml6-module-qtqml-workerscript \
     qml6-module-qtquick \
     qml6-module-qtquick-controls \
     qml6-module-qtquick-window \
@@ -52,6 +114,60 @@ sudo apt-get install -y \
     libpcsclite1 \
     udisks2 \
     mpv
+
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
+STAGE_DIR="${TMP_DIR}/stage"
+if [ -n "$SOURCE_DIR" ]; then
+    BUILD_JOBS="${CMAKE_BUILD_PARALLEL_LEVEL:-1}"
+    if [[ ! "$BUILD_JOBS" =~ ^[1-9][0-9]*$ ]]; then
+        echo "Error: CMAKE_BUILD_PARALLEL_LEVEL must be a positive integer." >&2
+        exit 1
+    fi
+    echo "Installing build dependencies..."
+    sudo apt-get install -y --no-install-recommends \
+        build-essential cmake pkg-config \
+        qt6-base-dev qt6-declarative-dev qt6-svg-dev \
+        libdrm-dev libssl-dev libsdl2-dev libpcsclite-dev
+    echo "Building from ${SOURCE_DIR} (this can take a while)..."
+    cmake -S "$SOURCE_DIR" -B "${TMP_DIR}/build" \
+        -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
+    cmake --build "${TMP_DIR}/build" --parallel "$BUILD_JOBS"
+    DESTDIR="$STAGE_DIR" cmake --install "${TMP_DIR}/build"
+    VERSION="source build"
+else
+    if [ "$VERSION" = "latest" ]; then
+        echo "Fetching latest release tag..."
+        if ! VERSION=$(curl -fsSL \
+            "https://api.github.com/repos/${REPO}/releases/latest" \
+            | python3 -c "import sys, json; print(json.load(sys.stdin)['tag_name'])"); then
+            echo "Error: could not resolve the latest release. If none is published, use --source DIR." >&2
+            exit 1
+        fi
+    fi
+    if [[ ! "$VERSION" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+        echo "Error: invalid release version: ${VERSION}" >&2
+        exit 1
+    fi
+    TARBALL="240-MP-${VERSION}-linux-arm64.tar.gz"
+    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${TARBALL}"
+    echo "Downloading and verifying ${TARBALL}..."
+    curl -fsSL -o "${TMP_DIR}/${TARBALL}" "${DOWNLOAD_URL}"
+    curl -fsSL -o "${TMP_DIR}/SHA256SUMS" \
+        "https://github.com/${REPO}/releases/download/${VERSION}/SHA256SUMS"
+    if ! (cd "$TMP_DIR" &&
+        awk -v file="$TARBALL" '$2 == file && NF == 2 { print; count++ } END { if (count != 1) exit 1 }' SHA256SUMS > checksum &&
+        sha256sum --check --strict checksum); then
+        echo "Error: release checksum verification failed for ${TARBALL}." >&2
+        exit 1
+    fi
+    mkdir -p "$STAGE_DIR"
+    tar -xzf "${TMP_DIR}/${TARBALL}" -C "$STAGE_DIR"
+fi
+if [ ! -x "${STAGE_DIR}/usr/local/bin/240mp" ] || [ ! -f "${STAGE_DIR}/usr/local/share/240mp/Main.qml" ]; then
+    echo "Error: the build or release is missing the application or its resources." >&2
+    exit 1
+fi
 
 # ── udev rule: allow tty group to open /dev/tty0 for VT switching ─────────────
 echo 'KERNEL=="tty0", GROUP="tty", MODE="0620"' \
@@ -64,18 +180,6 @@ echo 'KERNEL=="cec[0-9]*", GROUP="video", MODE="0660"' \
     | sudo tee /etc/udev/rules.d/99-240mp-cec.rules > /dev/null
 sudo udevadm control --reload-rules
 sudo udevadm trigger --subsystem-match=cec
-
-# ── Choose install owner ──────────────────────────────────────────────────────
-# Asked up front so the extract step can hand /opt/240mp to the user the app
-# will run as — the launcher applies in-app staged updates there without root.
-echo ""
-read -r -p "Install systemd autostart service? [y/N] " AUTOSTART_REPLY
-SERVICE_USER=""
-if [[ "${AUTOSTART_REPLY}" =~ ^[Yy]$ ]]; then
-    read -r -p "Run service as user [default: pi]: " SERVICE_USER
-    SERVICE_USER="${SERVICE_USER:-pi}"
-fi
-OWNER_USER="${SERVICE_USER:-$USER}"
 
 # Allow this app user to mount non-system filesystems through UDisks2
 # without an interactive desktop Polkit session. System-device mounts still use
@@ -90,21 +194,11 @@ polkit.addRule(function(action, subject) {
 });
 POLKIT_RULE_CONTENT
 
-# ── Download tarball ───────────────────────────────────────────────────────────
-echo "Downloading ${TARBALL}..."
-TMP_DIR=$(mktemp -d)
-trap 'rm -rf "$TMP_DIR"' EXIT
-
-curl -fsSL -o "${TMP_DIR}/${TARBALL}" "${DOWNLOAD_URL}"
-
 # ── Extract to install directory ───────────────────────────────────────────────
-# Tarball structure: usr/local/bin/240mp + usr/local/share/240mp/...
-# We strip the usr/local prefix and place files directly in $INSTALL_DIR.
-echo "Extracting to ${INSTALL_DIR}..."
+# Both installation sources are staged with the usr/local prefix.
+echo "Installing to ${INSTALL_DIR}..."
 sudo mkdir -p "${INSTALL_DIR}"
-sudo tar -xzf "${TMP_DIR}/${TARBALL}" \
-    --strip-components=3 \
-    -C "${INSTALL_DIR}"
+sudo cp -a "${STAGE_DIR}/usr/local/." "${INSTALL_DIR}/"
 
 # Owned by the running user so the launcher can swap in staged in-app updates.
 sudo chown -R "${OWNER_USER}:" "${INSTALL_DIR}"
@@ -211,7 +305,7 @@ LAUNCHER_SCRIPT
 sudo chmod +x "${LAUNCHER}"
 
 # ── Optional: systemd autostart ───────────────────────────────────────────────
-if [[ "${AUTOSTART_REPLY}" =~ ^[Yy]$ ]]; then
+if [ "$AUTOSTART" -eq 1 ]; then
     sudo tee "${SYSTEMD_SERVICE}" > /dev/null << UNIT
 [Unit]
 Description=240-MP Media Player
@@ -219,8 +313,8 @@ After=multi-user.target sound.target
 
 [Service]
 Type=simple
-User=${SERVICE_USER}
-SupplementaryGroups=tty video input
+User=${OWNER_USER}
+SupplementaryGroups=tty video input audio
 AmbientCapabilities=CAP_SYS_TTY_CONFIG
 Environment=QT_QPA_PLATFORM=eglfs
 Environment=QT_QPA_EGLFS_ALWAYS_SET_MODE=1
@@ -240,8 +334,8 @@ StandardError=journal
 WantedBy=multi-user.target
 UNIT
 
-    # ExecStopPost helper: normal quit (exit 0) or a crash powers the Pi off as
-    # before; exit 10 means the user chose "Exit to Terminal", so instead spawn a
+    # ExecStopPost helper: normal quit (exit 0) powers the Pi off; exit 10 means
+    # the user chose "Exit to Terminal", so instead spawn a
     # login shell on tty1 (see views/Settings.qml). RestartPreventExitStatus=10 12
     # keeps Restart=on-failure from relaunching the app over that shell.
     # Exit 12 is "Reboot" from the Quit dialog: reboot instead of powering off
@@ -252,14 +346,12 @@ UNIT
     sudo tee /usr/local/bin/240mp-stop > /dev/null << 'STOP_HELPER'
 #!/usr/bin/env bash
 # Called by 240mp.service ExecStopPost. systemd sets $EXIT_STATUS to the app's exit code.
-if [ "${EXIT_STATUS:-}" = "10" ]; then
-    systemctl start 240mp-terminal.service
-elif [ "${EXIT_STATUS:-}" = "11" ]; then
-    :   # in-app update restart — Restart=on-failure brings the app back up
-elif [ "${EXIT_STATUS:-}" = "12" ]; then
-    systemctl reboot
-else
+if [ "${SERVICE_RESULT:-}" = "success" ] && [ "${EXIT_CODE:-}" = "exited" ] && [ "${EXIT_STATUS:-}" = "0" ]; then
     systemctl poweroff
+elif [ "${EXIT_CODE:-}" = "exited" ] && [ "${EXIT_STATUS:-}" = "10" ]; then
+    systemctl start 240mp-terminal.service
+elif [ "${EXIT_CODE:-}" = "exited" ] && [ "${EXIT_STATUS:-}" = "12" ]; then
+    systemctl reboot
 fi
 STOP_HELPER
     sudo chmod +x /usr/local/bin/240mp-stop
@@ -287,9 +379,11 @@ TERMINAL_UNIT
     sudo systemctl daemon-reload
     sudo systemctl enable 240mp.service
     echo "Service installed and enabled."
-    echo "Start now with: sudo systemctl start 240mp"
+    echo "Reboot to start 240-MP on the local display: sudo reboot"
+elif [ -f "$SYSTEMD_SERVICE" ]; then
+    echo "Existing autostart service was left unchanged."
 fi
 
 echo ""
 echo "240-MP ${VERSION} installed successfully."
-echo "Run: 240mp"
+echo "Logs: sudo journalctl -u 240mp -b"

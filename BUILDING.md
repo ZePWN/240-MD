@@ -381,7 +381,7 @@ APP_ROOT=$(pwd) QT_QPA_PLATFORM=eglfs ./build/240mp   # headless / Lite
 
 How you read logs depends on whether you installed the autostart service:
 
-- **Run it by hand** — type `240mp` over SSH and logs print to that terminal. Use this while debugging. (Note: the launcher does **not** power off on exit, unlike the service.)
+- **Run it by hand** — on Lite, stop the service and run `240mp` from the Pi's local console VT, not an SSH terminal. Logs print to that terminal. (The launcher does **not** power off on exit, unlike the service.)
 - **Via the systemd service** — the service sends output to the journal, so:
     ```bash
     journalctl -u 240mp -b        # logs from this boot
@@ -392,6 +392,7 @@ How you read logs depends on whether you installed the autostart service:
     sudo systemctl stop 240mp
     240mp
     ```
+    Stopping the service for maintenance or a crash does not intentionally power off the Pi; failed launches are restarted.
 
 ### mpv playback logs
 

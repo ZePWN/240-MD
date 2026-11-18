@@ -2,7 +2,7 @@
 
 ## On a Raspberry Pi
 
-The following steps will set up an SD card for your Raspberry Pi with the latest version of 240-MP (and optionally set it up to autostart after boot).  
+The following steps set up Raspberry Pi OS Lite and install 240-MP to start automatically at boot, without a desktop or a local login.
 
 Steps 1-4 are focused on setting up a new card with Raspberry Pi OS Lite (64-Bit) and include options for writing a config.txt that will output to a CRT or modern TV.  
 
@@ -173,30 +173,30 @@ However, if you already have Raspberry Pi OS set up and working for your TV then
 
     - Raspberry Pi OS Lite does **not** boot to a desktop. On first boot you may see boot log text, a text login console, or sometimes just a blinking cursor for a bit while it finishes booting.
 
-4) Once complete, SSH in and run `sudo raspi-config`
+4) Once complete, SSH into the Pi.
 
     - If you set the hostname/user in Raspberry Pi Imager, SSH should usually be as simple as `ssh your-user@your-hostname.local`
     - If `.local` doesn't resolve on your network, use the Pi's IP address instead (`ssh your-user@192.168.x.x`). You can find it in your router's client list or on the Pi itself with `hostname -I`
 
-    - Turn on Auto Login: `System Options > Auto Login > Yes`
-    - Expand filesystem: `Advanced Options > Expand Filesystem > Yes`
-    - Select Finish and allow the Raspberry Pi to reboot
+    Console auto-login is **not** needed. The installer uses a system service running as your existing user. SSH and the optional exit-to-terminal login retain their normal authentication.
 
-5) After that completes SSH in again and run the following to install the latest version of 240-MP
+5) Clone and install over SSH:
 
     ```bash
-    bash <(curl -fsSL https://github.com/anthonycaccese/240-mp/releases/latest/download/install.sh)
+    git clone https://github.com/ZePWN/240-MD.git
+    cd 240-MD
+    bash scripts/install.sh --source .
     ```
 
-    This will install all of the needed dependencies (note: over WiFi it will take about 20 mins to complete) 
+    Install Git first with `sudo apt-get update && sudo apt-get install -y git` if needed. The installer requires Raspberry Pi OS Trixie (Debian 13), 64-bit, an existing non-root user and `sudo` access. It installs runtime and build dependencies without recommended extras, builds the checked-out source, and enables a systemd service. Building uses one compiler job to limit memory use, can take a while, and needs free disk space. Set `TMPDIR` to a directory on disk if `/tmp` is too small; advanced users can set `CMAKE_BUILD_PARALLEL_LEVEL` to build faster. Build packages remain installed afterward but do not run as background services. The installer does not install a desktop, alter display configuration, or reboot automatically. `sudo` may ask for your password.
 
-    **Optional** 
-    - You will get an option at the end of the install script that asks: `Install systemd autostart service? [y/N]` 
-    - If you type `Y` and press enter it will set up 240-MP to autostart when your Raspberry Pi boots to create a simple appliance experience (bascially a dedicated 240-MP device).
-    - If you choose that option please make sure to enter your primary user for the pi at the next prompt.  If you don't provide one it will set it up for the `Pi` user.
-    - If you ever need to inspect the autostart logs later, use `sudo journalctl -u 240mp -f`
+    By default the service uses the SSH user, or the existing service user on reinstall; its settings and files are stored under that user's home directory. To select a different existing user, add `--user USER`. To install without creating or changing the autostart service, add `--no-autostart` (an existing service is not disabled).
 
-At this point you can type `240mp` at any time to start up the app.  And if you installed the autostart service then the next time you boot your Pi it will boot directly into 240-MP.
+    Once a release is published, `bash scripts/install.sh` installs the latest release instead, verifies its checksum and skips build dependencies. A specific release can be selected with `bash scripts/install.sh v1.2.0`.
+
+6) Run `sudo reboot`. 240-MP starts on the Pi's attached display, not in the SSH terminal. To diagnose startup use `sudo systemctl status 240mp` and `sudo journalctl -u 240mp -b`. To stop it for maintenance use `sudo systemctl stop 240mp`; start it again with `sudo systemctl start 240mp`.
+
+The service masks the tty1 and automatic virtual-terminal login services while installed so they cannot draw over the app. The Quit menu's **Exit to Terminal** starts a password-protected tty1 login; SSH access is unaffected. Streaming services may still require their own sign-in.
 
 ### Post Install
 
@@ -253,39 +253,38 @@ At this point you can type `240mp` at any time to start up the app.  And if you 
 
 ### Update
 
-**From within the app (recommended):** go to `Settings → Update`, check for updates, download, and choose Apply & Restart. Your settings will be retained.
+**Release installs:** go to `Settings → Update`, check for updates, download, and choose Apply & Restart. Your settings will be retained. Source builds report version `dev` and do not support in-app updates.
 
 > Installs made before in-app updates were possible need to re-run the install script **once** (just follow the steps below).  Doing that will pick up the new launcher.  There is a check on the Update screen that will let you know if that's the case for you.
 
-**Via the install script** (also works any time; your settings will be retained):
+**Source installs:** SSH into the Pi, stop the service, update the checkout, and re-run the installer:
 
-1) SSH into your Raspberry Pi
-2) Re-run the install script
-    ```bash
-    bash <(curl -fsSL https://github.com/anthonycaccese/240-mp/releases/latest/download/install.sh)
-    ```
-3) When it asks to "`Install systemd autostart service? [y/N]`"
-    - If you already have autostart set up please answer `Y` (that's needed to keep the app files owned by the service user, which in-app updates rely on)
-    - If you don't have autostart installed and want to keep it that way just answer `N`
-    - And if you want to turn on autostart please answer `Y`
-4) Once that completes just run `sudo reboot` and when your pi restarts you'll be on the latest version
+```bash
+sudo systemctl stop 240mp
+cd ~/240-MD
+git pull --ff-only
+bash scripts/install.sh --source .
+sudo reboot
+```
+
+For a release install, re-run `bash scripts/install.sh` without `--source` instead. The existing service user and settings are retained. Use `--no-autostart` if you do not want to install or change the service.
 
 ### Uninstall
 
-1) If you'd like to remove 240-MP and continue to use your SD card for other things then you can run the following commands via terminal or over SSH:
+1) If autostart is installed, disable it before removing the application:
+
+    ```bash
+    sudo systemctl disable --now 240mp.service
+    sudo systemctl unmask getty@tty1.service autovt@.service
+    sudo rm -f /etc/systemd/system/240mp.service /etc/systemd/system/240mp-terminal.service /usr/local/bin/240mp-stop
+    sudo systemctl daemon-reload
+    ```
+
+2) Remove the application:
 
     ```bash
     sudo rm -rf /opt/240mp
     sudo rm /usr/local/bin/240mp
-    ```
-
-2) If you installed the autostart service and want to remove it then please run the running the following commands:
-
-    ```bash
-    sudo systemctl unmask getty@tty1.service autovt@.service
-    sudo systemctl disable 240mp.service
-    sudo rm -f /etc/systemd/system/240mp.service /etc/systemd/system/240mp-terminal.service /usr/local/bin/240mp-stop
-    sudo systemctl daemon-reload
     ```
 
 ## On macOS (ARM)
