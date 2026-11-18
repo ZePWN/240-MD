@@ -9,6 +9,22 @@ FocusScope {
 
     property var navParams: ({})
     property var navListState: ({})
+    property var moduleEntries: []
+
+    function updateMenu() {
+        var index = menuList.currentIndex
+        var rows = moduleEntries.slice()
+        var disc = usbAutoPlayWatcher.hiMdDisc
+        if (disc.filePath)
+            rows.push({ name: disc.title, entry_point: "modules/local_files/views/Root.qml",
+                        hiMd: true, params: { autoPlayPath: disc.filePath, title: disc.title,
+                                             historyKey: disc.historyKey, hiMd: true, usbPlayback: true } })
+        menuList.model = rows
+        if (rows.length > 0) {
+            menuList.currentIndex = Math.max(0, Math.min(index, rows.length - 1))
+            menuList.positionViewAtIndex(menuList.currentIndex, ListView.Contain)
+        }
+    }
 
     Component.onCompleted: {
         appCore.scan_for_modules()
@@ -17,13 +33,19 @@ FocusScope {
     Connections {
         target: appCore;
         function onModulesLoaded(moduleData) {
-            menuList.model = moduleData
-            if (moduleData.length > 0) {
+            moduleEntries = moduleData
+            updateMenu()
+            if (menuList.count > 0) {
                 var restore = (navListState.currentIndex !== undefined) ? navListState.currentIndex : 0
-                menuList.currentIndex = Math.min(restore, moduleData.length - 1)
+                menuList.currentIndex = Math.min(restore, menuList.count - 1)
                 menuList.positionViewAtIndex(menuList.currentIndex, ListView.Contain)
             }
         }
+    }
+
+    Connections {
+        target: usbAutoPlayWatcher
+        function onHiMdDiscChanged() { appRoot.updateMenu() }
     }
 
     // Header
@@ -150,12 +172,11 @@ FocusScope {
 
 
         Keys.onReturnPressed: {
-            // A row is {name, entry_point, params}. Module rows carry no params;
-            // rows contributed by a backend (see AppCore::menuEntriesForModule) use
-            // them to tell the module's router what was picked. This view stays
-            // ignorant of what any of them mean.
+            // Module and backend-contributed rows use params to select their route.
             var row = menuList.model[menuList.currentIndex]
             if (!row) return
+            if (row.hiMd && !usbAutoPlayWatcher.activateHiMd(row.params.autoPlayPath))
+                return
             console.log("Routing to: " + row.entry_point)
             appRoot.navigateTo(row.entry_point, row.params || {},
                                { currentIndex: menuList.currentIndex })

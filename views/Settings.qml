@@ -87,6 +87,16 @@ FocusScope {
             moduleId: ""
         })
 
+        items.push({
+            type: "list_single",
+            key: "autoplay_md",
+            label: "Autoplay MD",
+            options: ["On", "Off"],
+            value: appSettings["autoplay_md"] || "On",
+            description: "[ON] Play Hi-MD on insertion\n[OFF] Select the disc from the main menu",
+            moduleId: ""
+        })
+
         // Smooth Playback — only shown on devices whose smooth decode path can't
         // crop/zoom (the Pi 3 overlay path). Default ON; turning it off restores the
         // crop-capable video output. Takes effect on the next video.
@@ -467,7 +477,7 @@ FocusScope {
         Keys.onDownPressed: { quitChoiceIndex = Math.min(quitOptions.length - 1, quitChoiceIndex + 1) }
         Keys.onReturnPressed: {
             var act = quitOptions[quitChoiceIndex].action
-            if (act === "quit")          Qt.quit()
+            if (act === "quit")          root.quitApplication()
             else if (act === "reboot")   Qt.exit(12)   // matches EXIT_STATUS check in 240mp-stop
             else if (act === "terminal") Qt.exit(10)   // matches EXIT_STATUS check in 240mp-stop
             else { quitOverlayVisible = false; settingsList.forceActiveFocus() }

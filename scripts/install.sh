@@ -81,15 +81,26 @@ if [ "$ARCH" != "aarch64" ]; then
     exit 1
 fi
 
-# Preserve the existing service owner when an administrator updates over SSH.
+# Preserve an existing non-root service owner when updating over SSH.
 EXISTING_USER=""
 if [ -f "$SYSTEMD_SERVICE" ]; then
     EXISTING_USER=$(systemctl show 240mp.service --property=User --value)
 fi
-if [ -z "$OWNER_USER" ]; then
-    OWNER_USER="$EXISTING_USER"
+if [ -z "$OWNER_USER" ] && [ -n "$EXISTING_USER" ]; then
+    if [[ "$EXISTING_USER" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] \
+        && EXISTING_UID=$(id -u "$EXISTING_USER" 2>/dev/null) \
+        && [ "$EXISTING_UID" -ne 0 ]; then
+        OWNER_USER="$EXISTING_USER"
+    else
+        echo "Warning: existing service account '${EXISTING_USER}' is invalid or root; using the invoking user instead." >&2
+    fi
 fi
-OWNER_USER="${OWNER_USER:-${SUDO_USER:-$(id -un)}}"
+if [ -z "$OWNER_USER" ]; then
+    OWNER_USER="$(id -un)"
+    if [ "$OWNER_USER" = "root" ] && [ -n "${SUDO_USER:-}" ]; then
+        OWNER_USER="$SUDO_USER"
+    fi
+fi
 if [[ ! "$OWNER_USER" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]]; then
     echo "Error: selected account '${OWNER_USER}' has an unsupported username; use --user USER." >&2
     exit 1
@@ -99,7 +110,7 @@ if ! OWNER_UID=$(id -u "$OWNER_USER" 2>/dev/null); then
     exit 1
 fi
 if [ "$OWNER_UID" -eq 0 ]; then
-    echo "Error: selected account '${OWNER_USER}' is root; use --user USER for a non-root account." >&2
+    echo "Error: selected account '${OWNER_USER}' is root; run as your normal user or use --user USER." >&2
     exit 1
 fi
 if [ "$AUTOSTART" -eq 0 ] && [ -n "$EXISTING_USER" ] && [ "$OWNER_USER" != "$EXISTING_USER" ]; then
@@ -204,7 +215,8 @@ POLKIT_RULE="/etc/polkit-1/rules.d/60-240mp-usb-mount.rules"
 sudo tee "${POLKIT_RULE}" > /dev/null <<POLKIT_RULE_CONTENT
 polkit.addRule(function(action, subject) {
     if (subject.user == "${OWNER_USER}" &&
-        action.id == "org.freedesktop.udisks2.filesystem-mount") {
+        (action.id == "org.freedesktop.udisks2.filesystem-mount" ||
+         action.id == "org.freedesktop.udisks2.filesystem-mount-other-seat")) {
         return polkit.Result.YES;
     }
 });
@@ -341,7 +353,7 @@ ExecStartPre=+-/usr/bin/systemctl stop 240mp-terminal.service
 ExecStart=${LAUNCHER}
 Restart=on-failure
 RestartSec=5s
-RestartPreventExitStatus=10 12
+RestartPreventExitStatus=10 12 13
 ExecStopPost=+/usr/local/bin/240mp-stop
 StandardOutput=journal
 StandardError=journal
@@ -350,9 +362,9 @@ StandardError=journal
 WantedBy=multi-user.target
 UNIT
 
-    # ExecStopPost helper: normal quit (exit 0) powers the Pi off; exit 10 means
+    # ExecStopPost helper: explicit power off (exit 13) powers the Pi off; exit 10 means
     # the user chose "Exit to Terminal", so instead spawn a
-    # login shell on tty1 (see views/Settings.qml). RestartPreventExitStatus=10 12
+    # login shell on tty1 (see views/Settings.qml). RestartPreventExitStatus=10 12 13
     # keeps Restart=on-failure from relaunching the app over that shell.
     # Exit 12 is "Reboot" from the Quit dialog: reboot instead of powering off
     # (also listed in RestartPreventExitStatus so the app isn't relaunched mid-reboot).
@@ -362,7 +374,7 @@ UNIT
     sudo tee /usr/local/bin/240mp-stop > /dev/null << 'STOP_HELPER'
 #!/usr/bin/env bash
 # Called by 240mp.service ExecStopPost. systemd sets $EXIT_STATUS to the app's exit code.
-if [ "${SERVICE_RESULT:-}" = "success" ] && [ "${EXIT_CODE:-}" = "exited" ] && [ "${EXIT_STATUS:-}" = "0" ]; then
+if [ "${EXIT_CODE:-}" = "exited" ] && [ "${EXIT_STATUS:-}" = "13" ]; then
     systemctl poweroff
 elif [ "${EXIT_CODE:-}" = "exited" ] && [ "${EXIT_STATUS:-}" = "10" ]; then
     systemctl start 240mp-terminal.service

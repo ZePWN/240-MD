@@ -10,6 +10,9 @@ FocusScope {
     property string filePath:    navParams.filePath || ""
     property string itemTitle:   navParams.title    || ""
     property bool   autoPlay:    !!navParams.autoPlay
+    property bool   hiMd:        !!navParams.hiMd
+    property bool   usbPlayback: !!navParams.usbPlayback
+    property string historyKey:  navParams.historyKey || filePath
 
     property bool   overlayVisible:      false
     property int    choiceIndex:         0
@@ -116,16 +119,16 @@ FocusScope {
                 // completed playlist clears its resume point like a completed
                 // single video; anything else saves item + timecode.
                 if (reason === "eof")
-                    localFilesBackend.clearPosition(filePath)
+                    localFilesBackend.clearPosition(historyKey)
                 else if (pos > 0 || plPos >= 0)
-                    localFilesBackend.savePosition(filePath, pos, plPos)
+                    localFilesBackend.savePosition(historyKey, pos, plPos)
             } else if (!isImage(filePath)) {
                 // Single file: clear if near completion, save otherwise.
                 // Images carry no resume position, so they never write history.
                 if (dur > 0 && pos >= dur * 0.95)
-                    localFilesBackend.clearPosition(filePath)
+                    localFilesBackend.clearPosition(historyKey)
                 else if (pos > 5000)
-                    localFilesBackend.savePosition(filePath, pos, -1)
+                    localFilesBackend.savePosition(historyKey, pos, -1)
             }
             goBack()
         }
@@ -140,7 +143,7 @@ FocusScope {
         var autoSubs  = appCore.get_setting(moduleRoot.moduleId, "auto_subtitles")
         subtitleMode  = (typeof autoSubs === "boolean") ? ((autoSubs === true) ? "on" : "forced") : (autoSubs || "forced")
         var resRaw    = appCore.get_setting(moduleRoot.moduleId, "resume_playback") || "ask"
-        resumeSetting = autoPlay ? "no" : ((resRaw === "yes" || resRaw === "no") ? resRaw : "ask")
+        resumeSetting = (autoPlay && !hiMd) ? "no" : ((resRaw === "yes" || resRaw === "no") ? resRaw : "ask")
         var imgDur = parseFloat(appCore.get_setting(moduleRoot.moduleId, "image_duration"))
         imageDurationSec = isNaN(imgDur) ? 5 : imgDur
 
@@ -182,7 +185,7 @@ FocusScope {
         var savedPos = 0
         var savedPl  = -1
         if (resumeSetting !== "no") {
-            var saved = localFilesBackend.getSavedPosition(filePath)
+            var saved = localFilesBackend.getSavedPosition(historyKey)
             savedPos  = saved.pos || 0
             savedPl   = (saved.plPos !== undefined && saved.plPos !== null) ? saved.plPos : -1
         }
@@ -216,7 +219,15 @@ FocusScope {
     }
 
     function play(startMs, plPos, shuffle) {
+        if (usbPlayback) root.usbPlaybackInProgress = true
         mpvController.loadAndPlay(filePath, startMs > 0 ? startMs / 1000.0 : 0.0, 0, subFlag, [], subtitleLangs, loopOn, plPos, 0.0, "", false, "", shuffle, [], imageDurationSec, imageContent)
+    }
+
+    Component.onDestruction: {
+        if (usbPlayback) {
+            root.usbPlaybackInProgress = false
+            if (usbAutoPlayWatcher) usbAutoPlayWatcher.releasePlayback(filePath)
+        }
     }
 
     Rectangle {

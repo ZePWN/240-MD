@@ -69,7 +69,7 @@ Watch on YouTube: https://youtu.be/r-gylGDoELY
 - Shuffle playback
 - Playback history
 - Switch audio/subtitle tracks during playback
-- USB autoplay: put `Autoplay.txt` at the drive root with the filename to play from that directory; unplugging the drive stops playback and returns to the main menu
+- USB autoplay: put `Autoplay.txt` at the drive root with the filename to play from that directory; an optional `Title: ...` second line names a Hi-MD disc in the menu. Hi-MD autoplay can be disabled in Settings and its playback honors Local Files' resume setting. See [INSTALL.md](INSTALL.md#post-install).
 
 ### NFC Reader ([Wiki](https://github.com/anthonycaccese/240-MP/wiki/Module:-NFC-Reader))
 - Start video playback via NFC cards

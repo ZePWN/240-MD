@@ -199,13 +199,33 @@ Window {
     property var appNavStack: []
     property var appCurrentParams: ({})
     property bool _startupNavigated: false
+    property bool usbPlaybackInProgress: false
+
+    function quitApplication() {
+        if (appCore.isAutostartSession()) Qt.exit(13)
+        else Qt.quit()
+    }
 
     function startUsbAutoplay(filePath) {
         root._startupNavigated = true
         root.appNavStack = [{ source: "views/ModuleList.qml", params: {}, listState: {} }]
         root.appCurrentParams = {}
         moduleLoader.setSource("modules/local_files/views/Root.qml", {
-            "navParams": { "autoPlayPath": filePath }
+            "navParams": { "autoPlayPath": filePath, "usbPlayback": true }
+        })
+    }
+
+    function startHiMdAutoplay(disc) {
+        if ((appCore.get_setting("", "autoplay_md") || "On") === "Off")
+            return
+        if (!usbAutoPlayWatcher.activateHiMd(disc.filePath))
+            return
+        root._startupNavigated = true
+        root.appNavStack = [{ source: "views/ModuleList.qml", params: {}, listState: {} }]
+        root.appCurrentParams = {}
+        moduleLoader.setSource("modules/local_files/views/Root.qml", {
+            "navParams": { "autoPlayPath": disc.filePath, "title": disc.title,
+                           "historyKey": disc.historyKey, "hiMd": true, "usbPlayback": true }
         })
     }
 
@@ -218,9 +238,67 @@ Window {
     Connections {
         target: usbAutoPlayWatcher
         function onAutoplayRequested(filePath) { root.startUsbAutoplay(filePath) }
+        function onHiMdAutoplayRequested(disc) { root.startHiMdAutoplay(disc) }
+        function onHiMdLoadingChanged() {
+            if (usbAutoPlayWatcher.hiMdLoading) {
+                hiMdErrorTimer.stop()
+                hiMdError.text = ""
+                root.dismissScreenSaver()
+                idleTracker.resetActivity()
+            }
+        }
+        function onHiMdLoadError(message) {
+            hiMdError.text = message
+            hiMdErrorTimer.restart()
+        }
         function onDriveRemoved() {
-            root.returnToMainMenu()
-            mpvController.stop()
+            if (root.usbPlaybackInProgress)
+                mpvController.stop()
+            else
+                root.returnToMainMenu()
+        }
+    }
+
+    Rectangle {
+        id: hiMdOverlay
+        z: 100
+        anchors.fill: parent
+        color: root.surfaceColor
+        visible: (usbAutoPlayWatcher && usbAutoPlayWatcher.hiMdLoading) || hiMdError.text !== ""
+
+        Column {
+            anchors.centerIn: parent
+            spacing: root.sh * 0.035
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: hiMdError.text !== "" ? hiMdError.text : "READING HI-MD"
+                color: root.primaryColor
+                font.family: root.globalFont
+                font.pixelSize: root.sh * 0.05
+            }
+            Text {
+                id: hiMdSpinner
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: hiMdError.text === ""
+                property int frame: 0
+                text: ["|", "/", "-", "\\"][frame]
+                color: root.tertiaryColor
+                font.family: root.globalFont
+                font.pixelSize: root.sh * 0.06
+            }
+        }
+
+        Text { id: hiMdError; visible: false }
+        Timer {
+            interval: 200
+            repeat: true
+            running: hiMdOverlay.visible && hiMdError.text === ""
+            onTriggered: hiMdSpinner.frame = (hiMdSpinner.frame + 1) % 4
+        }
+        Timer {
+            id: hiMdErrorTimer
+            interval: 5000
+            onTriggered: hiMdError.text = ""
         }
     }
 
@@ -267,7 +345,7 @@ Window {
 
         Keys.onPressed: (event) => {
             if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_Q) {
-                Qt.quit()
+                root.quitApplication()
             }
         }
 
@@ -390,7 +468,7 @@ Window {
         Keys.onPressed: (event) => {
             event.accepted = true
             if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_Q) {
-                Qt.quit()
+                root.quitApplication()
                 return
             }
             screenSaverActive = false

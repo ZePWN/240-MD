@@ -68,7 +68,10 @@ FocusScope {
         if (autoPlayPath !== "") {
             replaceWith("Player.qml", {
                 filePath: autoPlayPath,
-                title: autoPlayPath.substring(autoPlayPath.lastIndexOf("/") + 1),
+                title: navParams.title || autoPlayPath.substring(autoPlayPath.lastIndexOf("/") + 1),
+                historyKey: navParams.historyKey || "",
+                hiMd: !!navParams.hiMd,
+                usbPlayback: !!navParams.usbPlayback,
                 autoPlay: true
             })
             return

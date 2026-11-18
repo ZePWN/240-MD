@@ -16,6 +16,7 @@
 #include <QDir>
 #include <linux/input.h>
 #include <linux/cec.h>
+#include <linux/cec-funcs.h>
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
@@ -97,6 +98,8 @@ InputManager::InputManager(const QString &dataRoot, AppCore *appCore, QObject *p
 
 #ifdef Q_OS_LINUX
     openConsumerControlDevice();
+    m_cecRetryTimer.setInterval(5000);
+    connect(&m_cecRetryTimer, &QTimer::timeout, this, &InputManager::openCecDevice);
     openCecDevice();
 #endif
 
@@ -487,6 +490,8 @@ void InputManager::onConsumerControlReadable() {
 }
 
 void InputManager::openCecDevice() {
+    if (m_cecFd >= 0)
+        return;
     for (int index = 0; index < 16; ++index) {
         const QString devicePath = QStringLiteral("/dev/cec%1").arg(index);
         const int fd = ::open(devicePath.toLocal8Bit().constData(), O_RDWR | O_NONBLOCK | O_CLOEXEC);
@@ -506,7 +511,7 @@ void InputManager::openCecDevice() {
             continue;
         }
 
-        if (!cec_has_playback(addresses.log_addr_mask) &&
+        if (!cec_has_playback(addresses.log_addr_mask) && addresses.num_log_addrs == 0 &&
             (caps.capabilities & CEC_CAP_LOG_ADDRS)) {
             __u16 physicalAddress = CEC_PHYS_ADDR_INVALID;
             if (::ioctl(fd, CEC_ADAP_G_PHYS_ADDR, &physicalAddress) < 0 ||
@@ -525,26 +530,77 @@ void InputManager::openCecDevice() {
             requested.log_addr_type[0] = CEC_LOG_ADDR_TYPE_PLAYBACK;
             requested.all_device_types[0] = CEC_OP_ALL_DEVTYPE_PLAYBACK;
 
-            if (::ioctl(fd, CEC_ADAP_S_LOG_ADDRS, &requested) < 0 ||
-                !cec_has_playback(requested.log_addr_mask)) {
-                qWarning("[input] could not claim a CEC playback address on %s", qPrintable(devicePath));
+            if (::ioctl(fd, CEC_ADAP_S_LOG_ADDRS, &requested) < 0) {
+                qWarning("[input] could not request a CEC playback address on %s: %s",
+                         qPrintable(devicePath), strerror(errno));
+                ::close(fd);
+                continue;
+            }
+            // The non-blocking ioctl starts address allocation asynchronously.
+            if (!cec_has_playback(requested.log_addr_mask)) {
                 ::close(fd);
                 continue;
             }
         } else if (!cec_has_playback(addresses.log_addr_mask)) {
-            qWarning("[input] CEC adapter %s has no playback logical address", qPrintable(devicePath));
             ::close(fd);
             continue;
         }
 
+        __u32 mode = CEC_MODE_INITIATOR | CEC_MODE_FOLLOWER;
+        if (::ioctl(fd, CEC_S_MODE, &mode) < 0) {
+            qWarning("[input] cannot receive HDMI-CEC messages on %s: %s",
+                     qPrintable(devicePath), strerror(errno));
+            ::close(fd);
+            continue;
+        }
+
+        cec_log_addrs current{};
+        __u16 physicalAddress = CEC_PHYS_ADDR_INVALID;
+        if (::ioctl(fd, CEC_ADAP_G_LOG_ADDRS, &current) < 0 ||
+            ::ioctl(fd, CEC_ADAP_G_PHYS_ADDR, &physicalAddress) < 0 ||
+            physicalAddress == CEC_PHYS_ADDR_INVALID || !cec_has_playback(current.log_addr_mask)) {
+            qWarning("[input] CEC adapter %s is not ready to announce its address", qPrintable(devicePath));
+            ::close(fd);
+            continue;
+        }
+
+        __u8 logicalAddress = CEC_LOG_ADDR_INVALID;
+        for (unsigned int i = 0; i < current.num_log_addrs; ++i) {
+            if (current.log_addr[i] == CEC_LOG_ADDR_PLAYBACK_1 ||
+                current.log_addr[i] == CEC_LOG_ADDR_PLAYBACK_2 ||
+                current.log_addr[i] == CEC_LOG_ADDR_PLAYBACK_3) {
+                logicalAddress = current.log_addr[i];
+                break;
+            }
+        }
+        if (logicalAddress == CEC_LOG_ADDR_INVALID) {
+            qWarning("[input] CEC adapter %s has no playback address to announce", qPrintable(devicePath));
+            ::close(fd);
+            continue;
+        }
+
+        cec_msg announcement{};
+        cec_msg_init(&announcement, logicalAddress, CEC_LOG_ADDR_BROADCAST);
+        cec_msg_active_source(&announcement, physicalAddress);
+        if (::ioctl(fd, CEC_TRANSMIT, &announcement) < 0) {
+            qWarning("[input] cannot announce HDMI-CEC active source on %s: %s",
+                     qPrintable(devicePath), strerror(errno));
+        } else {
+            m_cecAnnouncementSequence = announcement.sequence;
+        }
+
         m_cecFd = fd;
+        m_cecRetryTimer.stop();
         m_cecNotifier = new QSocketNotifier(fd, QSocketNotifier::Read, this);
         connect(m_cecNotifier, &QSocketNotifier::activated,
                 this, &InputManager::onCecReadable);
         qInfo("[input] HDMI-CEC remote ready on %s", qPrintable(devicePath));
         return;
     }
-    qInfo("[input] no usable HDMI-CEC adapter found");
+    if (!m_cecRetryTimer.isActive()) {
+        qInfo("[input] no usable HDMI-CEC adapter found; retrying");
+        m_cecRetryTimer.start();
+    }
 }
 
 void InputManager::onCecReadable() {
@@ -555,6 +611,14 @@ void InputManager::onCecReadable() {
                 qWarning("[input] HDMI-CEC receive failed: %s", strerror(errno));
             return;
         }
+        if (m_cecAnnouncementSequence != 0 && message.sequence == m_cecAnnouncementSequence) {
+            if (!(message.tx_status & CEC_TX_STATUS_OK))
+                qWarning("[input] HDMI-CEC active-source announcement failed (status 0x%x)",
+                         message.tx_status);
+            m_cecAnnouncementSequence = 0;
+        }
+        if (!(message.rx_status & CEC_RX_STATUS_OK))
+            continue;
         if (message.len < 2)
             continue;
 

@@ -190,7 +190,7 @@ However, if you already have Raspberry Pi OS set up and working for your TV then
 
     Install Git first with `sudo apt-get update && sudo apt-get install -y git` if needed. The installer requires Raspberry Pi OS Trixie (Debian 13), 64-bit, an existing non-root user and `sudo` access. It installs runtime and build dependencies without recommended extras, builds the checked-out source, and enables a systemd service. Building uses one compiler job to limit memory use, can take a while, and needs free disk space. Set `TMPDIR` to a directory on disk if `/tmp` is too small; advanced users can set `CMAKE_BUILD_PARALLEL_LEVEL` to build faster. Build packages remain installed afterward but do not run as background services. The installer does not install a desktop, alter display configuration, or reboot automatically. `sudo` may ask for your password.
 
-    By default the service uses the SSH user, or the existing service user on reinstall; its settings and files are stored under that user's home directory. If the selected account no longer exists, or you want a different account, specify it explicitly, for example `bash scripts/install.sh --source . --user zepwn`. To install without creating or changing the autostart service, add `--no-autostart` (an existing service is not disabled).
+    By default the service uses the SSH user, or an existing valid non-root service user on reinstall; its settings and files are stored under that user's home directory. If the existing service user is root or no longer exists, the installer warns and uses the invoking user instead. To select a different existing account, specify it explicitly, for example `bash scripts/install.sh --source . --user zepwn`. To install without creating or changing the autostart service, add `--no-autostart` (an existing service is not disabled).
 
     Once a release is published, `bash scripts/install.sh` installs the latest release instead, verifies its checksum and skips build dependencies. A specific release can be selected with `bash scripts/install.sh v1.2.0`.
 
@@ -204,6 +204,26 @@ The service masks the tty1 and automatic virtual-terminal login services while i
 
 - The Local Files module will be enabled by default and you can open settings to enable any other modules you would like to display.  
 - Please see the [modules section](https://github.com/anthonycaccese/240-MP/wiki#modules) in the wiki for details on any additional set up that may be needed for the modules you'd like to use.
+
+**USB and Hi-MD autoplay**
+
+- USB storage is mounted by UDisks, typically under `/media/<service-user>/<label>`. Put `Autoplay.txt` in the disc's root with the filename of a media file in that same directory on the first line. An optional second line supplies a display title (without it, the filename is displayed):
+
+  ```text
+  Moana.mp4
+  Title: Moana
+  ```
+
+- **Settings > Autoplay MD** controls whether a Hi-MD disc starts automatically when inserted. It defaults to On; Off still mounts the disc and adds its title to the main menu. Turning it On takes effect on the next insertion. Other USB storage retains its existing autoplay behavior.
+- Hi-MD playback, whether automatic or selected from the menu, uses Local Files' **Resume Playback** setting (Ask, Always, or Never). As with Local Files, positions are saved after five seconds and cleared near the end. Positions are identified by file size and a SHA-256 hash of the first 64 KiB, not by the mount path or title. Identical files share a position, and files with the same size and identical first 64 KiB cannot be distinguished; playlist identity covers the playlist file, not its referenced media. Existing path-based Local Files and USB history is unchanged.
+- Some Hi-MD drives need time to make the disk available. 240-MP retries failed mounts every 10 seconds while the drive remains connected.
+- When Linux detects a disc in a Sony Hi-MD drive, a reading indicator appears while the filesystem is mounted and the autoplay file is checked. The drive may read the disc for some time before Linux reports it. If mounting takes over one minute or no valid autoplay target is found, the indicator shows an error briefly; mounting continues to retry.
+- Avoid mounting with `sudo`: UDisks normally uses `/media/root`, which the app user cannot access. Check the mount and errors with `lsblk -o NAME,FSTYPE,LABEL,MOUNTPOINTS` and `sudo journalctl -u 240mp -b | grep UsbAutoPlay`.
+
+**HDMI-CEC**
+
+- Enable HDMI-CEC on the TV (Samsung calls it Anynet+). On Linux, 240-MD registers as a playback device and announces itself as the active source at startup; this may switch the TV to the Pi's HDMI input.
+- The TV remote's directional, select, back and playback keys can control 240-MD when the TV forwards them over CEC. Check `sudo journalctl -u 240mp -b | grep -i cec` if the adapter cannot be opened or configured.
 
 **CRT Ouput**
 

@@ -164,6 +164,8 @@ private:
     QSocketNotifier *m_consumerNotifier = nullptr;
     int m_cecFd = -1;
     QSocketNotifier *m_cecNotifier = nullptr;
+    QTimer m_cecRetryTimer;
+    quint32 m_cecAnnouncementSequence = 0;
     Action m_cecHeldAction = Action::None;
 #endif
 

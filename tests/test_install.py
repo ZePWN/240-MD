@@ -110,6 +110,10 @@ class InstallerTests(unittest.TestCase):
         unit = (self.base / "etc/systemd/system/240mp.service").read_text()
         self.assertIn("User=alice", unit)
         self.assertIn("Environment=QT_QPA_PLATFORM=eglfs", unit)
+        self.assertIn("RestartPreventExitStatus=10 12 13", unit)
+        rule = (self.base / "etc/polkit-1/rules.d/60-240mp-usb-mount.rules").read_text()
+        self.assertIn("org.freedesktop.udisks2.filesystem-mount-other-seat", rule)
+        self.assertNotIn("org.freedesktop.udisks2.filesystem-mount-system", rule)
         commands = (self.base / "commands").read_text()
         self.assertIn("systemctl enable 240mp.service", commands)
         self.assertIn("--no-install-recommends", commands)
@@ -135,7 +139,7 @@ class InstallerTests(unittest.TestCase):
         self.assertIn("--user requires", result.stderr)
         self.assertFalse((self.base / "commands").exists())
 
-    def test_stale_service_owner_reports_the_selected_account(self):
+    def test_existing_service_owner_selection(self):
         unit_path = self.base / "existing.service"
         unit_path.touch()
         installer = self.base / "install.sh"
@@ -143,13 +147,34 @@ class InstallerTests(unittest.TestCase):
             'SYSTEMD_SERVICE="/etc/systemd/system/240mp.service"',
             f'SYSTEMD_SERVICE="{unit_path}"',
         ))
-        result = self.run_installer("--source", ROOT, installer=installer, FAKE_SERVICE_USER="pi")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("selected account 'pi' does not exist", result.stderr)
-        self.assertFalse((self.base / "commands").exists())
+        written_unit = self.base / unit_path.relative_to("/")
+        for existing, expected, warning in (
+            ("pi", "alice", True),
+            ("root", "alice", True),
+            ("zepwn", "zepwn", False),
+        ):
+            result = self.run_installer("--source", ROOT, installer=installer,
+                                        FAKE_SERVICE_USER=existing)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f"User={expected}", written_unit.read_text())
+            self.assertEqual("Warning: existing service account" in result.stderr, warning)
+
         result = self.run_installer("--source", "--user", "zepwn", ROOT,
-                                    installer=installer, FAKE_SERVICE_USER="pi")
+                                    installer=installer, FAKE_SERVICE_USER="root")
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("User=zepwn", written_unit.read_text())
+
+    def test_invoking_user_overrides_stale_sudo_user(self):
+        result = self.run_installer("--source", ROOT, SUDO_USER="root", FAKE_LOGIN="zepwn")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        unit = (self.base / "etc/systemd/system/240mp.service").read_text()
+        self.assertIn("User=zepwn", unit)
+
+    def test_root_without_non_root_account_fails(self):
+        result = self.run_installer("--source", ROOT, SUDO_USER="root", FAKE_LOGIN="root")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("selected account 'root' is root", result.stderr)
+        self.assertFalse((self.base / "commands").exists())
 
     def test_release_checksum_is_required(self):
         self.make_release(valid=False)
@@ -184,7 +209,8 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         helper = self.base / "usr/local/bin/240mp-stop"
         for code, status, service_result, expected in (
-            ("exited", "0", "success", "poweroff"),
+            ("exited", "0", "success", ""),
+            ("exited", "13", "exit-code", "poweroff"),
             ("exited", "10", "exit-code", "start 240mp-terminal.service"),
             ("exited", "11", "exit-code", ""),
             ("exited", "12", "exit-code", "reboot"),
