@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import Components
 
 FocusScope { 
@@ -9,6 +10,39 @@ FocusScope {
 
     property var navParams: ({})
     property var navListState: ({})
+<<<<<<< Updated upstream
+=======
+    readonly property bool hiMdIconInHeader: true
+    property var moduleEntries: []
+
+    function listState() {
+        return { currentIndex: menuList.currentIndex,
+                 hiMdFirst: menuList.model.length > 0 && !!menuList.model[0].hiMd }
+    }
+
+    function updateMenu() {
+        var index = menuList.currentIndex
+        var oldRows = menuList.model
+        var hadDisc = oldRows.length > 0 && !!oldRows[0].hiMd
+        var rows = moduleEntries.slice()
+        var disc = usbAutoPlayWatcher.hiMdDisc
+        if (disc.filePath)
+            rows.unshift({ name: disc.title, entry_point: "modules/local_files/views/Root.qml",
+                        hiMd: true, params: { autoPlayPath: disc.filePath, title: disc.title,
+                                             historyKey: disc.historyKey, hiMd: true, usbPlayback: true } })
+        if (oldRows.length > 0 && hadDisc !== !!disc.filePath) {
+            if (disc.filePath)
+                index++
+            else if (index > 0)
+                index--
+        }
+        menuList.model = rows
+        if (rows.length > 0) {
+            menuList.currentIndex = Math.max(0, Math.min(index, rows.length - 1))
+            menuList.positionViewAtIndex(menuList.currentIndex, ListView.Contain)
+        }
+    }
+>>>>>>> Stashed changes
 
     Component.onCompleted: {
         appCore.scan_for_modules()
@@ -20,7 +54,18 @@ FocusScope {
             menuList.model = moduleData
             if (moduleData.length > 0) {
                 var restore = (navListState.currentIndex !== undefined) ? navListState.currentIndex : 0
+<<<<<<< Updated upstream
                 menuList.currentIndex = Math.min(restore, moduleData.length - 1)
+=======
+                if (navListState.hiMdFirst !== undefined &&
+                        navListState.hiMdFirst !== listState().hiMdFirst) {
+                    if (listState().hiMdFirst)
+                        restore++
+                    else if (restore > 0)
+                        restore--
+                }
+                menuList.currentIndex = Math.min(restore, menuList.count - 1)
+>>>>>>> Stashed changes
                 menuList.positionViewAtIndex(menuList.currentIndex, ListView.Contain)
             }
         }
@@ -28,6 +73,7 @@ FocusScope {
 
     // Header
     AppBar {
+        indicateHiMdLoading: true
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.topMargin: root.sh * 0.125 //60
@@ -61,6 +107,7 @@ FocusScope {
 
     ListView {
         id: menuList;
+        objectName: "moduleMenu"
         model: [];
         anchors.top: parent.top
         anchors.left: parent.left
@@ -76,8 +123,41 @@ FocusScope {
             height: root.sh * 0.0583333 //28
 
             Item {
+                id: discIcon
+                visible: !!modelData.hiMd
+                width: visible ? root.sh * 0.05 : 0
+                height: parent.height
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: root.accentColor
+                    visible: menuList.currentIndex === index
+                }
+
+                Image {
+                    id: discImage
+                    objectName: modelData.hiMd ? "hiMdMenuImage" : ""
+                    anchors.centerIn: parent
+                    width: root.sh * 0.04
+                    height: width
+                    source: "../assets/images/logo.svg"
+                    sourceSize.width: width
+                    sourceSize.height: height
+                    visible: false
+                }
+                MultiEffect {
+                    objectName: modelData.hiMd ? "hiMdMenuIcon" : ""
+                    anchors.fill: discImage
+                    source: discImage
+                    colorization: 1.0
+                    colorizationColor: menuList.currentIndex === index ? root.surfaceColor : root.accentColor
+                }
+            }
+
+            Item {
                 id: textClipContainer;
-                width: Math.min(rowText.implicitWidth, menuList.width);
+                x: discIcon.width
+                width: Math.min(rowText.implicitWidth, menuList.width - x);
                 height: parent.height;
                 clip: true;
 
@@ -158,12 +238,12 @@ FocusScope {
             if (!row) return
             console.log("Routing to: " + row.entry_point)
             appRoot.navigateTo(row.entry_point, row.params || {},
-                               { currentIndex: menuList.currentIndex })
+                               appRoot.listState())
         }
 
         Keys.onPressed: function(event) {
             if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
-                appRoot.navigateTo("views/Settings.qml", {}, { currentIndex: menuList.currentIndex })
+                appRoot.navigateTo("views/Settings.qml", {}, appRoot.listState())
                 event.accepted = true
             }
         }

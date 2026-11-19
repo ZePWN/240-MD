@@ -205,6 +205,29 @@ At this point you can type `240mp` at any time to start up the app.  And if you 
 - The Local Files module will be enabled by default and you can open settings to enable any other modules you would like to display.  
 - Please see the [modules section](https://github.com/anthonycaccese/240-MP/wiki#modules) in the wiki for details on any additional set up that may be needed for the modules you'd like to use.
 
+<<<<<<< Updated upstream
+=======
+**USB and Hi-MD autoplay**
+
+- USB storage is mounted by UDisks, typically under `/media/<service-user>/<label>`. Put `Autoplay.txt` in the disc's root with the filename of a media file in that same directory on the first line. An optional second line supplies a display title (without it, the filename is displayed):
+
+  ```text
+  Moana.mp4
+  Title: Moana
+  ```
+
+- **Settings > Autoplay MD** controls whether a Hi-MD disc starts automatically when inserted. It defaults to On; Off still mounts the disc and adds its title to the main menu. Turning it On takes effect on the next insertion. Other USB storage retains its existing autoplay behavior.
+- Hi-MD playback, whether automatic or selected from the menu, uses Local Files' **Resume Playback** setting (Ask, Always, or Never). As with Local Files, positions are saved after five seconds and cleared near the end. Positions are identified by file size and a SHA-256 hash of the first 64 KiB, not by the mount path or title. Identical files share a position, and files with the same size and identical first 64 KiB cannot be distinguished; playlist identity covers the playlist file, not its referenced media. Existing path-based Local Files and USB history is unchanged.
+- Some Hi-MD drives need time to make the disk available. 240-MP retries failed mounts every 10 seconds while the drive remains connected.
+- When Linux detects a disc in a Sony Hi-MD drive, the MiniDisc icon pulses while the filesystem is mounted and the autoplay file is checked; on other screens a small icon appears in the corner. You can continue navigating while it loads. The drive may read the disc for some time before Linux reports it. If mounting takes over one minute or no valid autoplay target is found, a brief error appears; mounting continues to retry.
+- Avoid mounting with `sudo`: UDisks normally uses `/media/root`, which the app user cannot access. Check the mount and errors with `lsblk -o NAME,FSTYPE,LABEL,MOUNTPOINTS` and `sudo journalctl -u 240mp -b | grep UsbAutoPlay`.
+
+**HDMI-CEC**
+
+- Enable HDMI-CEC on the TV (Samsung calls it Anynet+). On Linux, 240-MD registers as a playback device and announces itself as the active source at startup; this may switch the TV to the Pi's HDMI input.
+- The TV remote's directional, select, back and playback keys can control 240-MD when the TV forwards them over CEC. Check `sudo journalctl -u 240mp -b | grep -i cec` if the adapter cannot be opened or configured.
+
+>>>>>>> Stashed changes
 **CRT Ouput**
 
 - If video playback looks like its slightly squeezed/stretched then please try these steps:
@@ -339,7 +362,7 @@ The AppImage carries its own copy of the Wayland client libraries and uses them 
 
 > **Note for SteamOS**: please switch to Desktop Mode for the following steps
 
-1. Download `240-MP-linux-x86_64.AppImage` from the [latest release](https://github.com/anthonycaccese/240-mp/releases/latest).
+1. Download `240-MP-linux-x86_64.AppImage` from the [latest release](https://github.com/ZePWN/240-MD/releases/latest).
 2. In your file manager, right-click the file → **Properties → Permissions** → tick *Is executable* (or run `chmod +x` on it from terminal).
 3. Double-click to launch. The Local Files module is enabled by default; open Settings to enable others (see the [modules section](https://github.com/anthonycaccese/240-MP/wiki#modules) in the wiki for details on each).
 
@@ -363,7 +386,7 @@ The AppImage carries its own copy of the Wayland client libraries and uses them 
 - The app verifies the download, swaps the new `.AppImage` over your current one in place (keeping a `.bak` of the previous version until the new one launches cleanly). 
 - In **Gaming Mode** the app needs to close after applying; so simply relaunch it from your Steam library to pick up the new version (the file path is unchanged, so your existing shortcut will still work). 
 - Your settings in `~/.local/share/240-MP/` are retained.
-- If the app is stored in a read-only location the in-app update can't write to then the update screen simply point you at the [Releases page](https://github.com/anthonycaccese/240-mp/releases/latest) to download and replace the `.AppImage` manually.
+- If the app is stored in a read-only location the in-app update can't write to then the update screen simply point you at the [Releases page](https://github.com/ZePWN/240-MD/releases/latest) to download and replace the `.AppImage` manually.
 
 ### Uninstall
 

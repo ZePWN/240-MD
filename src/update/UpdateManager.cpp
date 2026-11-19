@@ -16,7 +16,7 @@
 namespace {
 
 const QString kDefaultFeedUrl =
-    QStringLiteral("https://api.github.com/repos/anthonycaccese/240-mp/releases/latest");
+    QStringLiteral("https://api.github.com/repos/ZePWN/240-MD/releases/latest");
 
 // Release asset this build looks for. On Linux the artifact depends on CPU arch:
 // arm64 (Raspberry Pi) ships a tarball the launcher swaps into /opt; x86_64
@@ -134,7 +134,7 @@ void UpdateManager::evaluateApplyCapability() {
             m_applyHint = QStringLiteral("Running as an AppImage from a read-only "
                                          "location — download the latest .AppImage "
                                          "from the Releases page to update:\n"
-                                         "github.com/anthonycaccese/240-mp/releases/latest");
+                                         "github.com/ZePWN/240-MD/releases/latest");
         }
         return;
     }
@@ -151,7 +151,7 @@ void UpdateManager::evaluateApplyCapability() {
         m_canApply = false;
         m_applyHint = QStringLiteral("This install predates in-app updates. Re-run the "
                                      "installer once:\nbash <(curl -fsSL https://github.com/"
-                                     "anthonycaccese/240-mp/releases/latest/download/install.sh)");
+                                     "ZePWN/240-MD/releases/latest/download/install.sh)");
     } else {
         m_canApply = true;
     }

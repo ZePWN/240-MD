@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Window
+import QtQuick.Effects
 
 Window {
     id: root
@@ -181,6 +182,7 @@ Window {
     // engine invalidates the root context itself.
     readonly property var hints: inputManager ? inputManager.hints : ({})
     readonly property string appVersion: appCore ? appCore.appVersion : ""
+    readonly property bool hiMdLoading: usbAutoPlayWatcher ? usbAutoPlayWatcher.hiMdLoading : false
 
     // --- SCREEN SAVER STATE ---
     property bool screenSaverActive: false
@@ -219,8 +221,78 @@ Window {
         target: usbAutoPlayWatcher
         function onAutoplayRequested(filePath) { root.startUsbAutoplay(filePath) }
         function onDriveRemoved() {
+<<<<<<< Updated upstream
             root.returnToMainMenu()
             mpvController.stop()
+=======
+            if (root.usbPlaybackInProgress)
+                mpvController.stop()
+            else
+                root.returnToMainMenu()
+        }
+    }
+
+    Rectangle {
+        id: hiMdStatus
+        objectName: "hiMdStatus"
+        z: 100
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.topMargin: root.sh * 0.125
+        anchors.rightMargin: root.sw * 0.125
+        width: statusRow.width + root.sw * 0.02
+        height: root.sh * 0.06
+        color: root.surfaceColor
+        visible: hiMdError.text !== "" ||
+                 (root.hiMdLoading && !(moduleLoader.item && moduleLoader.item.hiMdIconInHeader))
+
+        Row {
+            id: statusRow
+            anchors.centerIn: parent
+            spacing: root.sw * 0.01
+            Item {
+                width: root.sh * 0.05
+                height: root.sh * 0.05
+                Image {
+                    id: statusIcon
+                    anchors.fill: parent
+                    source: "assets/images/logo.svg"
+                    sourceSize.width: width
+                    sourceSize.height: height
+                    visible: false
+                }
+                MultiEffect {
+                    id: statusIconEffect
+                    objectName: "hiMdStatusIcon"
+                    anchors.fill: statusIcon
+                    source: statusIcon
+                    colorization: 1.0
+                    colorizationColor: root.accentColor
+                    SequentialAnimation on opacity {
+                        running: root.hiMdLoading && hiMdError.text === "" && hiMdStatus.visible
+                        loops: Animation.Infinite
+                        NumberAnimation { to: 0.3; duration: 500 }
+                        NumberAnimation { to: 1.0; duration: 500 }
+                        onRunningChanged: if (!running) statusIconEffect.opacity = 1.0
+                    }
+                }
+            }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: hiMdError.text !== ""
+                text: hiMdError.text
+                color: root.primaryColor
+                font.family: root.globalFont
+                font.pixelSize: root.sh * 0.0333333
+            }
+        }
+
+        Text { id: hiMdError; visible: false }
+        Timer {
+            id: hiMdErrorTimer
+            interval: 5000
+            onTriggered: hiMdError.text = ""
+>>>>>>> Stashed changes
         }
     }
 

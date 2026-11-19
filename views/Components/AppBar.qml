@@ -8,6 +8,7 @@ Row {
     property url iconSource: "../../assets/images/logo.svg"
     property string title: "240-MD"
     property string subtitle: ""
+    property bool indicateHiMdLoading: false
 
     // Fits the standard screen gutter — 80px (root.sw * 0.125) on each side.
     // The subtitle elides when it would overflow this width.
@@ -27,10 +28,19 @@ Row {
             source: appBar.iconSource
         }
         MultiEffect {
+            id: iconEffect
+            objectName: appBar.indicateHiMdLoading ? "hiMdHeaderIcon" : ""
             anchors.fill: iconImg
             source: iconImg
             colorization: 1.0
             colorizationColor: root.accentColor
+            SequentialAnimation on opacity {
+                running: appBar.indicateHiMdLoading && root.hiMdLoading
+                loops: Animation.Infinite
+                NumberAnimation { to: 0.3; duration: 500 }
+                NumberAnimation { to: 1.0; duration: 500 }
+                onRunningChanged: if (!running) iconEffect.opacity = 1.0
+            }
         }
     }
 
